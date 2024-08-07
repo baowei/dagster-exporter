@@ -1,0 +1,5 @@
+## Docker
+```
+docker build -t dagster-exporter:v1
+docker run --name test --rm -p 8000:8000 -e GRAPHQL_ENDPOINT=https://xxxxxx/graphql   dagster-exporter:v1
+```
