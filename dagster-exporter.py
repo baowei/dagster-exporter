@@ -48,8 +48,8 @@ STATUS_MAPPING = {
 
 class DagsterCollector:
     def collect(self):
-        after, before = self.get_last_timestamp()
-        runs_data = self.fetch_runs(after, before)
+        start_time, end_time = self.get_last_timestamp()
+        runs_data = self.fetch_runs(start_time, end_time)
         if runs_data and runs_data.get('data'):
             for run in runs_data['data']['runsOrError']['results']:
                 run_id = run['runId']
@@ -66,10 +66,10 @@ class DagsterCollector:
                 yield self.create_gauge_metric('dagster_run_duration', 'Duration of Dagster run', run_id, job_name,
                                                duration)
 
-    def fetch_runs(self, after, before):
+    def fetch_runs(self, start_time, end_time):
         variables = {
-            "after": after,
-            "before": before
+            "after": start_time,
+            "before": end_time
         }
         try:
             response = requests.post(DAGSTER_ENDPOINT, json={'query': RUNS_QUERY, 'variables': variables})
@@ -85,22 +85,26 @@ class DagsterCollector:
         return metric
 
     def get_last_timestamp(self):
+        current_time = time.time()
         if not os.path.exists(TIMESTAMP_FILE):
-            current_time = time.time()
-            self.update_timestamp(current_time)
-            return current_time - QUERY_INTERVAL, current_time
+            start_time = current_time - QUERY_INTERVAL
+            end_time = current_time
+            self.update_timestamp(start_time, end_time)
+            return start_time, end_time
         else:
             with open(TIMESTAMP_FILE, 'r') as f:
-                current_time = time.time()
-                state_time = float(f.read().strip())
-                if current_time - state_time > QUERY_INTERVAL:
-                    self.update_timestamp(current_time)
-                return state_time, current_time
+                content = f.read().strip()
+                start_time_str, end_time_str = content.split()
+                start_time = float(start_time_str)
+                end_time = float(end_time_str)
 
+                if current_time - end_time > 120:
+                    self.update_timestamp(end_time, current_time)
+                return start_time, end_time
 
-    def update_timestamp(self, current_time):
+    def update_timestamp(self, start_time, end_time):
         with open(TIMESTAMP_FILE, 'w') as f:
-            f.write(str(current_time))
+            f.write(f"{start_time} {end_time}")
 
 
 class MetricsHandler(BaseHTTPRequestHandler):
@@ -110,6 +114,11 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'text/plain; version=0.0.4')
             self.end_headers()
             self.wfile.write(generate_latest(REGISTRY))
+        elif self.path == '/info':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b"OK")
         else:
             self.send_response(404)
             self.end_headers()
