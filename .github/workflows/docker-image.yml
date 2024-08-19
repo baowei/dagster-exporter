@@ -2,11 +2,7 @@ name: Build the container image
 
 on:
   push:
-    branches: [ "main" ]
     tags: [ 'v*.*.*' ]
-  pull_request:
-    branches: [ "main" ]
-
 
 jobs:
   build:
@@ -34,6 +30,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          labels: |
+            org.opencontainers.image.title=dagsterExporter
+            org.opencontainers.image.description=Another description
 
       - name: Build and push
         id: build
@@ -41,7 +40,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: ${{ steps.meta.outputs.tags }}
