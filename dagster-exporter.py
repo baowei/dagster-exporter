@@ -10,7 +10,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 DAGSTER_ENDPOINT = os.getenv('GRAPHQL_ENDPOINT', 'https://default-dagster.example.com/graphql')
 QUERY_INTERVAL = int(os.getenv('QUERY_INTERVAL', 300))
 SLEEP_INTERVAL = int(os.getenv('SLEEP_INTERVAL', 60))
-PORT = int(os.getenv('PORT', 8000))
+# Program directory path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TIMESTAMP_FILE = os.path.join(BASE_DIR, '.cache', 'dagster_timestamp.states')
+
+# Ensure the cache directory exists
+os.makedirs(os.path.dirname(TIMESTAMP_FILE), exist_ok=True)
 
 # GraphQL Query
 RUNS_QUERY = """
@@ -43,8 +48,8 @@ STATUS_MAPPING = {
 
 class DagsterCollector:
     def collect(self):
-        current_time = time.time()
-        runs_data = self.fetch_runs(current_time, QUERY_INTERVAL)
+        start_time, end_time = self.get_last_timestamp()
+        runs_data = self.fetch_runs(start_time, end_time)
         if runs_data and runs_data.get('data'):
             for run in runs_data['data']['runsOrError']['results']:
                 run_id = run['runId']
@@ -61,10 +66,10 @@ class DagsterCollector:
                 yield self.create_gauge_metric('dagster_run_duration', 'Duration of Dagster run', run_id, job_name,
                                                duration)
 
-    def fetch_runs(self, timestamp, interval):
+    def fetch_runs(self, start_time, end_time):
         variables = {
-            "after": timestamp - interval,
-            "before": timestamp
+            "after": start_time,
+            "before": end_time
         }
         try:
             response = requests.post(DAGSTER_ENDPOINT, json={'query': RUNS_QUERY, 'variables': variables})
@@ -79,6 +84,28 @@ class DagsterCollector:
         metric.add_metric([run_id, job_name], value)
         return metric
 
+    def get_last_timestamp(self):
+        current_time = time.time()
+        if not os.path.exists(TIMESTAMP_FILE):
+            start_time = current_time - QUERY_INTERVAL
+            end_time = current_time
+            self.update_timestamp(start_time, end_time)
+            return start_time, end_time
+        else:
+            with open(TIMESTAMP_FILE, 'r') as f:
+                content = f.read().strip()
+                start_time_str, end_time_str = content.split()
+                start_time = float(start_time_str)
+                end_time = float(end_time_str)
+
+                if current_time - end_time > 120:
+                    self.update_timestamp(end_time, current_time)
+                return start_time, end_time
+
+    def update_timestamp(self, start_time, end_time):
+        with open(TIMESTAMP_FILE, 'w') as f:
+            f.write(f"{start_time} {end_time}")
+
 
 class MetricsHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -87,6 +114,11 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'text/plain; version=0.0.4')
             self.end_headers()
             self.wfile.write(generate_latest(REGISTRY))
+        elif self.path == '/info':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b"OK")
         else:
             self.send_response(404)
             self.end_headers()
@@ -101,7 +133,7 @@ def run_server(port):
 
 if __name__ == "__main__":
     # Start the metrics server in a separate thread
-    server_thread = threading.Thread(target=run_server, args=(PORT,))
+    server_thread = threading.Thread(target=run_server, args=(8000,))
     server_thread.daemon = True
     server_thread.start()
 
@@ -109,4 +141,4 @@ if __name__ == "__main__":
     REGISTRY.register(DagsterCollector())
 
     while True:
-        time.sleep(1)
+        time.sleep(SLEEP_INTERVAL)
