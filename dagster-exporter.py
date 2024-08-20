@@ -2,9 +2,10 @@ import os
 import time
 import requests
 import threading
-from prometheus_client import generate_latest, REGISTRY
+from prometheus_client import CollectorRegistry, generate_latest, REGISTRY
 from prometheus_client.core import GaugeMetricFamily
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 
 # Configuration
 DAGSTER_ENDPOINT = os.getenv('GRAPHQL_ENDPOINT', 'https://default-dagster.example.com/graphql')
@@ -47,6 +48,9 @@ STATUS_MAPPING = {
 
 
 class DagsterCollector:
+    def __init__(self, target=None):
+        self.target = target or DAGSTER_ENDPOINT
+
     def collect(self):
         start_time, end_time = self.get_last_timestamp()
         runs_data = self.fetch_runs(start_time, end_time)
@@ -72,7 +76,7 @@ class DagsterCollector:
             "before": end_time
         }
         try:
-            response = requests.post(DAGSTER_ENDPOINT, json={'query': RUNS_QUERY, 'variables': variables})
+            response = requests.post(self.target, json={'query': RUNS_QUERY, 'variables': variables})
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -114,6 +118,23 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'text/plain; version=0.0.4')
             self.end_headers()
             self.wfile.write(generate_latest(REGISTRY))
+        elif self.path.startswith('/probe'):
+            query_components = parse_qs(urlparse(self.path).query)
+            target = query_components.get('target', [None])[0]
+
+            if target:
+                registry = CollectorRegistry()
+                collector = DagsterCollector(target=target)
+                registry.register(collector)
+
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain; version=0.0.4')
+                self.end_headers()
+                self.wfile.write(generate_latest(registry))
+            else:
+                self.send_response(400)  # Bad Request if no target is specified
+                self.end_headers()
+                self.wfile.write(b"Missing 'target' parameter in the query string")
         elif self.path == '/info':
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
