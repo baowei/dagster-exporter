@@ -39,7 +39,7 @@ spec:
               protocol: TCP
           livenessProbe:
             httpGet:
-              path: /alive
+              path: /info
               port: http
             initialDelaySeconds: 30
           resources:

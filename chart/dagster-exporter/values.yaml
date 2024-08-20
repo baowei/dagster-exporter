@@ -7,7 +7,6 @@ recreate_on_start: false
 
 image:
   repository: "ghcr.io/baowei/dagster-exporter"
-  tag: "latest"
   pullPolicy: Always
 
 imagePullSecrets: []
@@ -62,7 +61,7 @@ affinity: {}
 
 app:
   vars:
-    GRAPHQL_ENDPOINT: 'https://default-dagster.example.com/graphql'
+    GRAPHQL_ENDPOINT: 'http://alpha-dagster-webserver.dagster/dagster/graphql'
     QUERY_INTERVAL: 300
     SLEEP_INTERVAL: 60
 
