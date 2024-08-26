@@ -5,12 +5,54 @@ kind: ServiceMonitor
 metadata:
 {{- if .Values.serviceMonitor.labels }}
   labels:
-{{ toYaml .Values.serviceMonitor.labels | indent 4}}
+    {{- toYaml .Values.serviceMonitor.labels | indent 4}}
 {{- end }}
+    {{- with .Values.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   name: {{ include "dagster-exporter.fullname" . }}
   namespace: {{ .Release.Namespace }}
 spec:
   endpoints:
+{{- if .Values.serviceMonitor.multipleTarget }}
+{{- range  .Values.serviceMonitor.targets }}
+  - targetPort: {{ $.Values.container.port }}
+    scheme: {{ $.Values.serviceMonitor.scheme }}
+    {{- if $.Values.serviceMonitor.bearerTokenFile }}
+    bearerTokenFile: {{ $.Values.serviceMonitor.bearerTokenFile }}
+    {{- end }}
+    {{- if $.Values.serviceMonitor.tlsConfig }}
+    tlsConfig: {{ toYaml $.Values.serviceMonitor.tlsConfig | nindent 6 }}
+    {{- end }}
+    path: {{ $.Values.serviceMonitor.telemetryPath }}
+    interval: {{ .interval | default $.Values.serviceMonitor.interval }}
+    scrapeTimeout: {{ .scrapeTimeout | default $.Values.serviceMonitor.timeout }}
+    params:
+      target:
+      - {{ .url }}
+{{- if $.Values.serviceMonitor.relabelings }}
+    relabelings:
+{{ toYaml $.Values.serviceMonitor.relabelings | indent 4 }}
+{{- end }}
+    metricRelabelings:
+      - action: replace
+        sourceLabels: [instance]
+        targetLabel: instance
+        replacement: {{ .url }}
+      - action: replace
+        sourceLabels: [target]
+        targetLabel: target
+        replacement: {{ .name }}
+        {{- range $targetLabel, $replacement := .additionalMetricsRelabels | default $.Values.serviceMonitor.additionalMetricsRelabels }}
+      - action: replace
+        targetLabel: {{ $targetLabel | quote }}
+        replacement: {{ $replacement | quote }}
+        {{- end }}
+{{- if concat (.additionalRelabeling | default list) $.Values.serviceMonitor.additionalRelabeling }}
+{{ toYaml (concat (.additionalRelabeling | default list) $.Values.serviceMonitor.additionalRelabeling) | indent 6 }}
+{{- end }}
+{{- end }}
+{{- else }}
   - targetPort: {{ .Values.container.port }}
 {{- if .Values.serviceMonitor.interval }}
     interval: {{ .Values.serviceMonitor.interval }}
@@ -28,6 +70,14 @@ spec:
 {{- if .Values.serviceMonitor.relabelings }}
     relabelings:
 {{ toYaml .Values.serviceMonitor.relabelings | indent 4 }}
+{{- end }}
+{{- if .Values.serviceMonitor.scheme }}
+    scheme: {{ .Values.serviceMonitor.scheme }}
+{{- end }}
+{{- if .Values.serviceMonitor.tlsConfig }}
+    tlsConfig:
+{{ toYaml .Values.serviceMonitor.tlsConfig | indent 6 }}
+{{- end }}
 {{- end }}
   jobLabel: {{ include "dagster-exporter.fullname" . }}
   namespaceSelector:
