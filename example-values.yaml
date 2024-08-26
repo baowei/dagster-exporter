@@ -9,7 +9,7 @@ image:
   repository: "ghcr.io/baowei/dagster-exporter"
   pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+  tag: "v0.0.2"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -37,6 +37,7 @@ securityContext: {}
 
 service:
   type: ClusterIP
+  # HTTP Port
   port: 80
 
 container:
@@ -61,19 +62,20 @@ tolerations: []
 affinity: {}
 
 app:
-  vars: {}
+  vars:
+    GRAPHQL_ENDPOINT: http://alpha-dagster-webserver.dagster-dev/dagster/graphql
 
 serviceMonitor:
   # When set true then use a ServiceMonitor to configure scraping
-  enabled: false
-  multipleTarget: false
-  targets: []
+  enabled: true
+  multipleTarget: true
+  targets:
   # for every targets, url and name must be set,
   # an individual additionalRelabeling can be set for every target
-  # - url: "http://dagster-1/graphql"
-  #   name: "dagster-1"
-  # - url: "http://dagster-2/graphql"
-  #   name: "dagster-2"
+   - url: 'http://alpha-dagster-webserver.dagster-dev/dagster/graphql'
+     name: "dagster-dev"
+  # - url: 'https://am.busybox.cc/dagster-left/graphql'
+  #   name: "dagster-staging"
   #   additionalRelabeling:
   #   - sourceLabels: [type]
   #     targetLabel: type
@@ -87,7 +89,7 @@ serviceMonitor:
   # Set how frequently Prometheus should scrape
   interval: 30s
   # Please set telemetryPath to /probe if you are using multiple targets
-  telemetryPath: /metrics
+  telemetryPath: /probe
   # Set timeout for scrape
   timeout: 10s
   # Set relabel_configs as per https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config
@@ -96,16 +98,16 @@ serviceMonitor:
   # targetLabels: []
   # metricRelabelings: []
 prometheusRule:
-  enabled: false
+  enabled: true
   additionalLabels: {}
-  rules: []
-#    # These are just examples rules, please adapt them to your needs.
-#    # Make sure to constraint the rules to the current service.
-#      - alert: DagsterJobFailure
-#        expr: min by (instance, job_name, run_id) (dagster_run_status{service="{{ template "dagster-exporter.fullname" . }}"}) == 0
-#        for: 2m
-#        labels:
-#          severity: critical
-#        annotations:
-#          summary: Dagster Job {{ "{{ $labels.job_name }}" }} Failure.
-#          description: Dagster job {{ "{{ $labels.job_name }}" }} has failed. RunID is {{ "{{ $labels.run_id }}" }}. Instance {{ "{{ $labels.instance }}" }}.
+  rules:
+    # These are just examples rules, please adapt them to your needs.
+    # Make sure to constraint the rules to the current service.
+      - alert: DagsterJobFailure
+        expr: min by (instance, job_name, run_id) (dagster_run_status{service="{{ template "dagster-exporter.fullname" . }}"}) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Dagster Job {{ "{{ $labels.job_name }}" }} Failure.
+          description: Dagster job {{ "{{ $labels.job_name }}" }} has failed. RunID is {{ "{{ $labels.run_id }}" }}. Instance {{ "{{ $labels.instance }}" }}.
