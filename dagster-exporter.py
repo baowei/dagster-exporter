@@ -103,7 +103,7 @@ class DagsterCollector:
                 end_time = float(end_time_str)
 
                 if current_time - end_time > 120:
-                    self.update_timestamp(end_time, current_time)
+                    self.update_timestamp(end_time - QUERY_INTERVAL, current_time)
                 return start_time, end_time
 
     def update_timestamp(self, start_time, end_time):
